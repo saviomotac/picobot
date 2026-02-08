@@ -2,7 +2,7 @@
 
 This document covers how to set up a local development environment, build, test, and publish Picobot.
 
-## Prerequisites
+## What You'll Need
 
 - [Go](https://go.dev/dl/) 1.25+ installed
 - [Docker](https://www.docker.com/) installed (for container builds)
@@ -48,13 +48,13 @@ The binary will be created in the current directory.
 ### Run locally
 
 ```sh
-# First-time setup — creates ~/.picobot config and workspace
+# First time? Run onboard to create ~/.picobot config and workspace
 ./picobot onboard
 
-# Single-shot query
+# Try a quick query
 ./picobot agent -m "Hello!"
 
-# Start gateway (long-running mode with Telegram)
+# Start the full gateway (includes Telegram, heartbeat, etc.)
 ./picobot gateway
 ```
 
@@ -82,7 +82,7 @@ const version = "x.x.x"
 
 Update this value before building a new release.
 
-## Cross-Compilation
+## Building for Different Platforms
 
 Build for different architectures without any runtime dependencies:
 
@@ -95,23 +95,30 @@ GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o picobot_linux
 
 # macOS ARM64 (Apple Silicon)
 GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o picobot_mac_arm64 ./cmd/picobot
+
+# Windows (if you're into that)
+GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o picobot.exe ./cmd/picobot
 ```
 
-The `-ldflags="-s -w"` flags strip debug symbols, keeping the binary at ~11MB.
+**What the flags do:**
+- `CGO_ENABLED=0` → pure static binary, no libc dependency
+- `-ldflags="-s -w"` → strip debug symbols, keeps binary around ~11MB instead of ~30MB
 
-## Docker
+## Docker Workflow
 
 ### Build the image
 
-The project uses a multi-stage Docker build (Alpine-based, ~33MB final image):
+We use a multi-stage Alpine-based build — keeps the final image around ~33MB:
 
 ```sh
 docker build -f docker/Dockerfile -t louisho5/picobot:latest .
 ```
 
-> **Note:** Run this from the project root, not from inside `docker/`.
+> **Important:** Run this from the **project root**, not from inside `docker/`. The build context needs access to the whole codebase.
 
-### Test the image locally
+### Test it locally
+
+Spin up a container to make sure it works:
 
 ```sh
 docker run --rm -it \
@@ -130,13 +137,13 @@ docker logs -f picobot
 
 ### Push to Docker Hub
 
-1. **Log in** (one-time):
+**First time only** — log in:
 
 ```sh
 docker login
 ```
 
-2. **Build and push** (single command):
+**Build and push** in one shot:
 
 ```sh
 go build ./... && \
@@ -144,25 +151,33 @@ docker build -f docker/Dockerfile -t louisho5/picobot:latest . && \
 docker push louisho5/picobot:latest
 ```
 
-3. **Verify** the image is live at [hub.docker.com/r/louisho5/picobot](https://hub.docker.com/r/louisho5/picobot).
+Verify it's live at [hub.docker.com/r/louisho5/picobot](https://hub.docker.com/r/louisho5/picobot).
 
-### Tagging a specific version
+### Version tagging
 
-If you want to publish a versioned tag alongside `latest`:
+If you want to publish a specific version tag (like `v0.1.0`) alongside `latest`:
 
 ```sh
 docker tag louisho5/picobot:latest louisho5/picobot:v0.1.0
 docker push louisho5/picobot:v0.1.0
 ```
 
-### Full release workflow
+Users can then pin to that version:
+
+```sh
+docker pull louisho5/picobot:v0.1.0
+```
+
+### Full release checklist
+
+When you're ready to ship a new version:
 
 ```sh
 # 1. Update version in cmd/picobot/main.go
 # 2. Run tests
 go test ./...
 
-# 3. Build Go binary (validates compilation)
+# 3. Build Go binary
 go build ./...
 
 # 4. Build Docker image
@@ -176,14 +191,14 @@ docker tag louisho5/picobot:latest louisho5/picobot:v0.1.0
 docker push louisho5/picobot:v0.1.0
 ```
 
-## Docker Compose (Development)
+## Docker Compose for Local Dev
 
-For local testing with Docker Compose:
+If you want to test the full Docker setup locally (closer to how it'll run in production):
 
 ```sh
 cd docker
 cp .env.example .env
-# Edit .env with your API keys
+# Edit .env with your real API keys
 docker compose up -d
 ```
 
@@ -210,38 +225,113 @@ These environment variables configure the Docker container:
 | `TELEGRAM_BOT_TOKEN` | Telegram Bot API token | Yes (for gateway) |
 | `TELEGRAM_ALLOW_FROM` | Comma-separated Telegram user IDs to allow | No |
 
-## Adding a New Tool
+## Extending Picobot
 
-1. Create a new file in `internal/agent/tools/` (e.g. `mytool.go`)
-2. Implement the `Tool` interface from `internal/agent/tools/base.go`
-3. Register the tool in `internal/agent/tools/registry.go`
-4. Run tests: `go test ./internal/agent/...`
+### Adding a new tool
 
-## Adding a New Provider
+Let's say you want to add a `database` tool that queries PostgreSQL:
 
-1. Create a new file in `internal/providers/` (e.g. `myprovider.go`)
-2. Implement the `Provider` interface from `internal/providers/base.go`
-3. Wire it up in the provider factory in `internal/providers/`
-4. Add config schema fields in `internal/config/schema.go`
+1. **Create the file:**
+   ```sh
+   touch internal/agent/tools/database.go
+   ```
+
+2. **Implement the `Tool` interface:**
+   ```go
+   package tools
+   
+   import "context"
+   
+   type DatabaseTool struct{}
+   
+   func NewDatabaseTool() *DatabaseTool { return &DatabaseTool{} }
+   
+   func (t *DatabaseTool) Name() string { return "database" }
+   func (t *DatabaseTool) Description() string { 
+       return "Query PostgreSQL database"
+   }
+   func (t *DatabaseTool) Parameters() map[string]interface{} {
+       // return JSON Schema for arguments
+   }
+   func (t *DatabaseTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
+       // your implementation here
+   }
+   ```
+
+3. **Register it in `internal/agent/loop.go`:**
+   ```go
+   reg.Register(tools.NewDatabaseTool())
+   ```
+
+4. **Test it:**
+   ```sh
+   go test ./internal/agent/tools/
+   ```
+
+That's it. The agent loop will automatically expose it to the LLM and route tool calls to your implementation.
+
+### Adding a new LLM provider
+
+Want to add support for Anthropic, Cohere, or a custom provider?
+
+1. **Create the provider file:**
+   ```sh
+   touch internal/providers/anthropic.go
+   ```
+
+2. **Implement the `LLMProvider` interface from `internal/providers/provider.go`:**
+   ```go
+   type LLMProvider interface {
+       Chat(ctx context.Context, messages []Message, tools []ToolDefinition, model string) (ChatResponse, error)
+       GetDefaultModel() string
+   }
+   ```
+
+3. **Wire it up in the config schema:**
+   - Add config fields in `internal/config/schema.go`
+   - Update the factory logic in `internal/providers/factory.go`
+
+4. **Test it:**
+   ```sh
+   go test ./internal/providers/
+   ```
 
 ## Troubleshooting
 
-**Binary won't compile:**
+### Build fails with weird errors
+
+Try cleaning and re-downloading deps:
+
 ```sh
+go clean -cache
 go mod tidy
 go build ./...
 ```
 
-**Docker build fails on `go mod download`:**
-Make sure `go.sum` is committed and up to date:
+### Docker build fails on `go mod download`
+
+Make sure `go.mod` and `go.sum` are committed and synced:
+
 ```sh
 go mod tidy
 git add go.mod go.sum
+git commit -m "Update go modules"
 ```
 
-**Image push rejected:**
-Verify you're logged in and the repository name matches:
+### Tests pass locally but fail in CI
+
+Check your Go version — CI might be using a different version. Match it:
+
+```sh
+go version
+# vs what's in .github/workflows or your CI config
+```
+
+### Can't push to Docker Hub
+
+Make sure you're logged in and have permission:
+
 ```sh
 docker login
-docker images | grep picobot
+# Use your Docker Hub username, not email
 ```
