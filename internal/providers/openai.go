@@ -23,7 +23,7 @@ func NewOpenAIProvider(apiKey, apiBase string, timeoutSecs int) *OpenAIProvider 
 	if apiBase == "" {
 		apiBase = "https://api.openai.com/v1" // sensible default; can be overridden
 	}
-	if timeoutSecs <= 0 {
+	if timeoutSecs <= 1 {
 		timeoutSecs = 60 // default 60 seconds
 	}
 	return &OpenAIProvider{
