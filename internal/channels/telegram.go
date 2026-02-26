@@ -8,11 +8,59 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/local/picobot/internal/chat"
 )
+
+var markdownDoubleBoldRE = regexp.MustCompile(`\*\*([^*\n]+)\*\*`)
+
+func formatTelegramMarkdownV2(s string) string {
+	// Normalize common LLM output quirks.
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	s = markdownDoubleBoldRE.ReplaceAllString(s, "*$1*")
+	lines := strings.Split(s, "\n")
+	for i, line := range lines {
+		trimmed := strings.TrimLeft(line, " \t")
+		if strings.HasPrefix(trimmed, ".-") {
+			trimmed = strings.TrimLeft(strings.TrimPrefix(trimmed, ".-"), " \t")
+			lines[i] = "- " + trimmed
+		}
+	}
+	s = strings.Join(lines, "\n")
+
+	return escapeTelegramMarkdownV2PreserveBold(s)
+}
+
+func escapeTelegramMarkdownV2PreserveBold(s string) string {
+	var b strings.Builder
+	b.Grow(len(s) + len(s)/8)
+	inBold := false
+
+	for _, r := range s {
+		switch r {
+		case '*':
+			// Keep asterisk markers so *bold* can render.
+			b.WriteRune(r)
+			inBold = !inBold
+			continue
+		case '_':
+			if inBold {
+				b.WriteRune(r)
+				continue
+			}
+			b.WriteByte('\\')
+		case '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!', '\\':
+			b.WriteByte('\\')
+		}
+		b.WriteRune(r)
+	}
+
+	return b.String()
+}
 
 // StartTelegram is a convenience wrapper that uses the real polling implementation
 // with the standard Telegram base URL.
@@ -131,14 +179,33 @@ func StartTelegramWithBase(ctx context.Context, hub *chat.Hub, token, base strin
 				u := base + "/sendMessage"
 				v := url.Values{}
 				v.Set("chat_id", out.ChatID)
-				v.Set("text", out.Content)
+				v.Set("text", formatTelegramMarkdownV2(out.Content))
+				v.Set("parse_mode", "MarkdownV2")
 				resp, err := client.PostForm(u, v)
 				if err != nil {
 					log.Printf("telegram sendMessage error: %v", err)
 					continue
 				}
-				io.ReadAll(resp.Body)
+				body, _ := io.ReadAll(resp.Body)
 				resp.Body.Close()
+
+				if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+					log.Printf("telegram sendMessage http error: status=%s body=%s", resp.Status, string(body))
+					continue
+				}
+
+				var apiResp struct {
+					Ok          bool   `json:"ok"`
+					Description string `json:"description"`
+				}
+				if err := json.Unmarshal(body, &apiResp); err != nil {
+					log.Printf("telegram sendMessage invalid json response: %v body=%s", err, string(body))
+					continue
+				}
+				if !apiResp.Ok {
+					log.Printf("telegram sendMessage api error: %s", apiResp.Description)
+					continue
+				}
 			}
 		}
 	}()

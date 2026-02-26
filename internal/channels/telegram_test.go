@@ -76,6 +76,9 @@ func TestStartTelegramWithBase(t *testing.T) {
 		if v.Get("chat_id") != "456" || v.Get("text") != "reply" {
 			t.Fatalf("unexpected sendMessage form: %v", v)
 		}
+		if v.Get("parse_mode") != "MarkdownV2" {
+			t.Fatalf("unexpected parse_mode: %q", v.Get("parse_mode"))
+		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timeout waiting for sendMessage to be posted")
 	}
@@ -84,4 +87,13 @@ func TestStartTelegramWithBase(t *testing.T) {
 	cancel()
 	// give a small grace period
 	time.Sleep(50 * time.Millisecond)
+}
+
+func TestFormatTelegramMarkdownV2(t *testing.T) {
+	in := ".-**Temperatura atual:** 25,9C\nCidade: Teresina."
+	got := formatTelegramMarkdownV2(in)
+	want := "\\- *Temperatura atual:* 25,9C\nCidade: Teresina\\."
+	if got != want {
+		t.Fatalf("unexpected formatted text: got %q want %q", got, want)
+	}
 }

@@ -32,7 +32,7 @@ func NewContextBuilder(workspace string, r memory.Ranker, topK int) *ContextBuil
 func (cb *ContextBuilder) BuildMessages(history []string, currentMessage string, channel, chatID string, memoryContext string, memories []memory.MemoryItem) []providers.Message {
 	msgs := make([]providers.Message, 0, len(history)+8)
 	// system prompt
-	msgs = append(msgs, providers.Message{Role: "system", Content: "You are Picobot, a helpful assistant."})
+	msgs = append(msgs, providers.Message{Role: "system", Content: "You are SMCHouseBot, a helpful assistant. Always reply in Brazilian Portuguese unless the user explicitly asks for another language. Use a dry, sarcastic tone inspired by Dr. House, while remaining helpful, precise, and technically competent."})
 
 	// Load workspace bootstrap files (SOUL.md, AGENTS.md, USER.md, TOOLS.md)
 	// These define the agent's personality, instructions, and available tools documentation.
