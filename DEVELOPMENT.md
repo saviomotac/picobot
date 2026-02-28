@@ -54,7 +54,10 @@ The binary will be created in the current directory.
 # Try a quick query
 ./picobot agent -m "Hello!"
 
-# Start the full gateway (includes Telegram, Discord, heartbeat, etc.)
+# Login to channels (Telegram, Discord, WhatsApp)
+./picobot channels login
+
+# Start the full gateway (includes channels, heartbeat, etc.)
 ./picobot gateway
 ```
 
@@ -84,7 +87,31 @@ Update this value before building a new release.
 
 ## Building for Different Platforms
 
-Build for different architectures without any runtime dependencies:
+### Quick builds with Make
+
+The project ships a `Makefile` that cross-compiles all supported platforms in one command:
+
+```sh
+# Build all targets — full and lite variants for Linux amd64/arm64 and macOS arm64
+make build
+
+# Build individual targets
+make linux_amd64        # full build, Linux x86-64
+make linux_arm64        # full build, Linux ARM64
+make mac_arm64          # full build, macOS Apple Silicon
+make linux_amd64_lite   # lite build, Linux x86-64
+make linux_arm64_lite   # lite build, Linux ARM64
+make mac_arm64_lite     # lite build, macOS Apple Silicon
+
+# Remove all built binaries
+make clean
+```
+
+Output files are named `picobot_<os>_<arch>[_lite]` and dropped in the project root.
+
+### Manual cross-compilation
+
+If you prefer to invoke `go build` directly:
 
 ```sh
 # Linux AMD64 (most VPS / servers)
@@ -96,13 +123,45 @@ GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o picobot_linux
 # macOS ARM64 (Apple Silicon)
 GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o picobot_mac_arm64 ./cmd/picobot
 
-# Windows (if you're into that)
+# Windows
 GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o picobot.exe ./cmd/picobot
 ```
 
 **What the flags do:**
 - `CGO_ENABLED=0` → pure static binary, no libc dependency
-- `-ldflags="-s -w"` → strip debug symbols, keeps binary around ~11MB instead of ~30MB
+- `-ldflags="-s -w"` → strip debug symbols (~22 MB → ~9 MB for the lite build)
+
+### Full vs Lite builds
+
+Picobot ships in two variants controlled by the `lite` Go build tag:
+
+| Variant | Tag | Binary size | Future heavy packages |
+|---------|-----|-------------|----------------------|
+| **Full** (default) | *(none)* | ~22 MB | All features |
+| **Lite** | `-tags lite` | ~9 MB | ❌ WhatsApp not included |
+
+**Why "Lite" exists:**
+
+Some optional features — starting with WhatsApp via [whatsmeow](https://github.com/tulir/whatsmeow) + [modernc.org/sqlite](https://gitlab.com/cznic/sqlite) — pull in large dependencies that add ~13 MB to the binary. We know there are some users running Picobot on a standard server or desktop never need those features and shouldn't have to pay the size cost.
+
+The lite build is aimed at resource-constrained environments: IoT devices, cheap VPS with limited storage, or any deployment where a ~9 MB static binary is strongly preferred over a ~22 MB one. It includes every core feature (agent loop, Telegram, Discord, memory, skills, cron, heartbeat) but omits packages gated behind the `!lite` build tag.
+
+As new optional heavy integrations are added to Picobot in the future, they will follow the same pattern — included in the full build by default, excluded from the lite build.
+
+```sh
+# Full build — all features including WhatsApp (default)
+go build ./cmd/picobot
+
+# Lite build — no WhatsApp or other heavy optional packages
+go build -tags lite ./cmd/picobot
+```
+
+For cross-compilation, simply add `-tags lite` alongside the existing `GOOS`/`GOARCH` flags, or use `make linux_amd64_lite` etc.
+
+```sh
+# Lite, Linux ARM64 (e.g. Raspberry Pi)
+GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -tags lite -o picobot_linux_arm64_lite ./cmd/picobot
+```
 
 ## Docker Workflow
 

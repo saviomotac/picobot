@@ -79,6 +79,7 @@ docker compose up -d
 go build -o picobot ./cmd/picobot
 ./picobot onboard                     # creates ~/.picobot config + workspace
 ./picobot agent -m "Hello!"           # single-shot query
+./picobot channels login              # login to channels (Telegram, Discord, WhatsApp)
 ./picobot gateway                     # long-running mode with Telegram
 ```
 
@@ -208,6 +209,7 @@ picobot version                        # print version
 picobot onboard                        # create config + workspace
 picobot agent -m "..."                 # one-shot query
 picobot agent -M model -m "..."        # query with specific model
+picobot channels login                 # login to channels (Telegram, Discord, WhatsApp)
 picobot gateway                        # start long-running agent
 picobot memory read today|long         # read memory
 picobot memory append today|long -c "" # append to memory
@@ -237,12 +239,12 @@ Works on any Linux with 256MB RAM. No runtime dependencies. Just copy the binary
 | Language | [Go](https://go.dev/) 1.26+ |
 | CLI framework | [Cobra](https://github.com/spf13/cobra) |
 | LLM providers | OpenAI-compatible API (OpenAI, OpenRouter, Ollama, etc.) |
-| Telegram | Raw Bot API (no third-party SDK, standard library `net/http`) |
+| Telegram | Raw Bot API |
 | Discord | [discordgo](https://github.com/bwmarrin/discordgo) library |
-| HTTP / JSON | Go standard library only (`net/http`, `encoding/json`) |
+| WhatsApp | [whatsmeow](https://github.com/tulir/whatsmeow) and [modernc.org/sqlite](https://gitlab.com/cznic/sqlite) |
 | Container | Alpine Linux 3.20 (multi-stage Docker build) |
 
-Picobot has **two** external dependencies (`spf13/cobra` for CLI parsing, `bwmarrin/discordgo` for Discord). Everything else — HTTP clients, JSON handling, Telegram polling, provider integrations — uses the Go standard library.
+Picobot is written **100%** in pure Go, without any CGO dependencies. All required libraries and assets are statically embedded into the final binary. This design ensures zero external runtime dependencies, fast cold start times, and full portability across all platforms supported by Go.
 
 ## Project Structure
 
@@ -266,7 +268,7 @@ docker/               Dockerfile, compose, entrypoint
 
 - [x] Add Telegram support
 - [x] Add Discord support
-- [ ] Add WhatsApp support
+- [x] Add WhatsApp support
 - [x] AI agent with skill creation capability
 - [ ] Integrate with MCP Servers
 - [ ] Integrate additional useful default skills
